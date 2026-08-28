@@ -1,5 +1,11 @@
 # ch32v305-pico
-CH32V305RBT6 dev board with raspberry pi pico pin compatibility.
+
+A compact CH32V305RBT6 development board with Raspberry Pi Pico-compatible
+dimensions and castellated holes. It supports USB High Speed and provides ample
+GPIO and ADC resources, making it well suited to projects such as keyboards
+with an 8 kHz polling rate. All passive components are 0603 or larger for easy
+hand soldering. The repository also includes a proven CherryUSB port and
+ready-to-use demos.
 
 ## Hardware
 
