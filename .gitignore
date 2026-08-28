@@ -1,2 +1,4 @@
 .DS_Store
 tmp/
+examples/usbhs_msc_internal_flash/build/
+examples/blink/build/
