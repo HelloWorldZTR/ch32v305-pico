@@ -1,0 +1,18 @@
+CH32V305 Pico PCB Changelog
+===========================
+
+Version 1                                                2026-08-29
+------------------------------------------------------------------
+
+This is the initial hardware validation revision.
+
+Validated:
+
+    Basic power input and onboard power-supply operation.
+
+    USB High Speed (USBHS) connectivity and communication.
+
+Known limitations:
+
+    Hand-solderability still needs improvement. Component placement
+    and pad accessibility will be refined in a future PCB revision.
