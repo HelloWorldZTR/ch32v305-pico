@@ -1,46 +1,117 @@
-# CherryUSB 与 USBHS 工程配置
+# CherryUSB and USBHS Project Configuration
 
-## 原始实现引用
+## Upstream implementation
 
-CH32V307 版 CherryUSB 实现最初来自 `crl6/cherryusb_ch32v307`：
+The CH32V307 CherryUSB implementation was originally sourced from
+`crl6/cherryusb_ch32v307`:
 
-- 原始仓库：<https://github.com/crl6/cherryusb_ch32v307>
-- 原始 CherryUSB 目录：<https://github.com/crl6/cherryusb_ch32v307/tree/a017bee289f4fdfcdbba8bf59a76fdfc973875b5/CherryUSB>
-- 对应提交：[`a017bee289f4fdfcdbba8bf59a76fdfc973875b5`](https://github.com/crl6/cherryusb_ch32v307/commit/a017bee289f4fdfcdbba8bf59a76fdfc973875b5)
+- Upstream repository: <https://github.com/crl6/cherryusb_ch32v307>
+- Original CherryUSB directory: <https://github.com/crl6/cherryusb_ch32v307/tree/a017bee289f4fdfcdbba8bf59a76fdfc973875b5/CherryUSB>
+- Source commit: [`a017bee289f4fdfcdbba8bf59a76fdfc973875b5`](https://github.com/crl6/cherryusb_ch32v307/commit/a017bee289f4fdfcdbba8bf59a76fdfc973875b5)
 
-本项目修复了该实现的一些BUG
+This project retains and consolidates general-purpose fixes made on top of that
+implementation, including Chapter 9 configuration lifecycle handling,
+multi-byte HID reports, USBHS EP0 data toggles, endpoint halt/close behavior,
+controller reset, and suspend/resume handling.
 
-## MounRiver Studio 中启用 USBHS
+## Generalization in this repository
 
-下图是原项目的关键配置：选中 `usb_dc_usbhs.c`，并在 C Compiler 的
-Preprocessor 设置中定义 `CONFIG_USB_HS`。
+After the port was imported from ProShock 4, logic tied to a specific gamepad
+main loop and its 8 kHz report scheduling was removed:
 
-![MounRiver Studio USBHS 配置](images/mounriver-usbhs-project-config.png)
+- Periodic calls to `usb_dc_usbhs_service()` are no longer required; that API
+  and the EP0 priority watchdog have been removed.
+- The application-level recovery API for missing IN completions and the public
+  USBHS IRQ lock/unlock API have been removed.
+- The EP0 request-complete callback used by WebHID/DS4 has been removed.
+- The temporary `PROSHOCK_USBHS_FORCE_FULL_SPEED` diagnostic switch has been removed.
+- USB suspend/resume events are still delivered to classes through the standard
+  CherryUSB event mechanism, but no project-specific status API is exposed.
 
-按以下步骤配置工程：
+Multi-byte HID `GET_REPORT`/`SET_REPORT` support is a general HID capability, so
+it is retained and consistently uses `usbd_hid_*` device callback names. The
+default `SET_REPORT` handler acknowledges the request, preventing ordinary
+keyboard examples without an LED output callback from stalling the control
+endpoint. Applications that need report validation can provide a strong
+definition of the same callback and return a negative value to reject a request.
 
-1. 将仓库根目录的 `CherryUSB` 加入 MounRiver 工程。可以直接放入工程目录，或像
-   ProShock 4 一样使用 Eclipse linked resource 指向该目录。
-2. 在 `Project Properties -> C/C++ Build -> Settings -> GNU RISC-V Cross C Compiler
-   -> Preprocessor` 的 `Defined symbols (-D)` 中加入 `CONFIG_USB_HS`。等价的命令行
-   选项是 `-DCONFIG_USB_HS`。
-3. 至少加入这些头文件搜索路径：
+The device core tracks the current alternate setting separately for every
+interface. When changing configurations, processing `SET_INTERFACE`, or
+processing `SET_CONFIGURATION(0)`, it operates only on endpoints belonging to
+the current configuration and alternate setting.
+
+Currently, `usb_dc_deinit()` only disconnects and resets the USBHS controller;
+it still does not call `usb_dc_low_level_deinit()`. Projects that need to turn
+off the USBHS clock, PHY, or NVIC at runtime must handle that in their board-level
+lifecycle code. This generalization does not change the existing behavior.
+
+## Known implementation limitation: fixed endpoint SRAM allocation
+
+`CherryUSB/port/ch32/usb_dc_usbhs.c` defines `USB_NUM_BIDIR_ENDPOINTS` as 16 by
+default and statically reserves a 512-byte OUT buffer plus a 512-byte IN DMA
+buffer for every non-control endpoint in `g_ch32_usbhs_udc`:
+
+```c
+uint8_t ep_databuf[USB_NUM_BIDIR_ENDPOINTS - 1][512 + 512];
+```
+
+With the default configuration, endpoint data buffers alone consume 15 KiB of
+SRAM. `usb_dc_init()` also iterates over all of these endpoints to configure
+their RX/TX DMA addresses. Omitting an endpoint from the USB descriptors or not
+opening it at runtime does not eliminate its static RAM allocation. On a
+CH32V305 with only 32 KiB of SRAM, this can easily crowd out application buffers,
+protocol stacks, and stack space.
+
+Override the macro in the project's `usb_config.h` with the highest endpoint
+number actually used, plus one. For example, an MSC device using EP0, `0x82 IN`,
+and `0x03 OUT` has a highest endpoint number of 3:
+
+```c
+#define USB_NUM_BIDIR_ENDPOINTS 4
+```
+
+This reserves buffers only for EP1 through EP3, reducing endpoint storage from
+about 15 KiB to about 3 KiB. Do not set the macro merely to the number of
+endpoints in use: if `0x84` is used, the value must be at least 5 even when it is
+the only non-control endpoint, or the endpoint state and DMA buffer arrays will
+be accessed out of bounds. This limitation comes from the CH32 USBHS port's
+current compile-time static allocation, not from a general CherryUSB class-layer
+requirement.
+
+## Enabling USBHS in MounRiver Studio
+
+The screenshot below shows the key project settings: select `usb_dc_usbhs.c`
+and define `CONFIG_USB_HS` in the C compiler's Preprocessor settings.
+
+![MounRiver Studio USBHS configuration](images/mounriver-usbhs-project-config.png)
+
+Configure the project as follows:
+
+1. Add the repository's top-level `CherryUSB` directory to the MounRiver
+   project. It may be copied directly into the project or referenced through an
+   Eclipse linked resource.
+2. Add `CONFIG_USB_HS` to `Defined symbols (-D)` under `Project Properties ->
+   C/C++ Build -> Settings -> GNU RISC-V Cross C Compiler -> Preprocessor`. The
+   equivalent command-line option is `-DCONFIG_USB_HS`.
+3. Add at least the following header search paths:
 
    ```text
    CherryUSB
    CherryUSB/common
    CherryUSB/core
-   CherryUSB/class/<实际使用的 class>
+   CherryUSB/class/<class-in-use>
    CherryUSB/port/ch32
    ```
 
-4. Device 工程至少编译 `CherryUSB/core/usbd_core.c`、实际使用的 class 源文件，以及
-   `CherryUSB/port/ch32/usb_dc_usbhs.c`。同一工程不要同时编译
-   `usb_dc_usbfs.c`、`usb_dc_ch58x.c` 或其他 device-controller port；否则会出现重复
-   API/IRQ 实现或使用错误控制器。
-5. `usb_dc_usbhs.c` 提供弱定义的 `usb_dc_low_level_init()` 和
-   `usb_dc_low_level_deinit()`。板级代码应提供强定义，完成 USBHS 时钟、PHY 和 IRQ
-   初始化。以 ProShock 4 的外部 HSE 配置为例：
+4. A device project must compile at least `CherryUSB/core/usbd_core.c`, the
+   source files for the class in use, and `CherryUSB/port/ch32/usb_dc_usbhs.c`.
+   Do not compile `usb_dc_usbfs.c`, `usb_dc_ch58x.c`, or another
+   device-controller port in the same project; doing so can cause duplicate
+   API/IRQ definitions or select the wrong controller.
+5. `usb_dc_usbhs.c` provides weak definitions of `usb_dc_low_level_init()` and
+   `usb_dc_low_level_deinit()`. Board code should provide strong definitions to
+   initialize the USBHS clock, PHY, and IRQ. The original reference project used
+   the following configuration with an external HSE:
 
    ```c
    void usb_dc_low_level_init(void)
@@ -55,19 +126,25 @@ Preprocessor 设置中定义 `CONFIG_USB_HS`。
    }
    ```
 
-   上述 PLL source、分频和 reference frequency 必须与本板实际 HSE/系统时钟方案一致，
-   不应在时钟源不同的板上原样照搬。
-6. USBHS 使用芯片的 HS PHY/USBHS 引脚，PCB 必须把对应 D+/D- 引脚接到 USB 接口；
-   不能仅靠 `CONFIG_USB_HS` 将接在 USBFS/OTG_FS 引脚上的硬件变成 USBHS。
-7. 调用 CherryUSB 的 descriptor/class 注册与 `usbd_initialize()` 前，先完成板级时钟
-   初始化。高速 descriptor 的 endpoint max packet size 和 interval 也要按实际 class
-   与目标轮询率设置，不能只修改编译宏。
+   The PLL source, divider, and reference frequency must match the board's
+   actual HSE and system clock configuration. Do not copy these settings
+   unchanged to a board with a different clock source.
+6. USBHS uses the chip's HS PHY and USBHS pins. The PCB must route the
+   corresponding D+/D- pins to the USB connector; defining `CONFIG_USB_HS`
+   cannot turn hardware connected to the USBFS/OTG_FS pins into USBHS.
+7. Complete board-level clock initialization before registering CherryUSB
+   descriptors/classes and calling `usbd_initialize()`. Endpoint maximum packet
+   sizes and intervals in high-speed descriptors must also match the actual
+   class and target polling rate; changing only the build macro is insufficient.
 
-## 快速自检
+## Quick checks
 
-- 编译命令中能看到 `-DCONFIG_USB_HS`。
-- 最终只链接一个 CH32 device-controller port：`usb_dc_usbhs.c`。
-- map 文件中存在 `USBHS_IRQHandler`，且没有重复定义。
-- `usb_dc_low_level_init()` 使用的是本板时钟配置，并启用了 `USBHS_IRQn`。
-- 主机枚举结果显示目标 speed 和 descriptor；若只能枚举为 Full Speed，优先检查 PHY
-  时钟、D+/D- 引脚/布线、线缆与 descriptor，而不是继续叠加宏。
+- The compiler command line contains `-DCONFIG_USB_HS`.
+- Exactly one CH32 device-controller port, `usb_dc_usbhs.c`, is linked into the
+  final image.
+- The map file contains `USBHS_IRQHandler` and reports no duplicate definition.
+- `usb_dc_low_level_init()` uses the board's clock configuration and enables
+  `USBHS_IRQn`.
+- Host enumeration reports the intended speed and descriptors. If the device
+  enumerates only at Full Speed, check the PHY clock, D+/D- pins and routing,
+  cable, and descriptors before adding more build macros.
