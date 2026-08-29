@@ -70,8 +70,6 @@ struct usbd_core_cfg_priv {
     uint16_t remote_wakeup;
     /** Standard-request two-byte response storage */
     uint16_t status_response;
-    /** Current bus suspend state */
-    bool suspended;
 } usbd_core_cfg;
 
 static usb_slist_t usbd_class_head = USB_SLIST_OBJECT_INIT(usbd_class_head);
@@ -133,6 +131,34 @@ usbd_find_configuration(uint8_t configuration)
     }
     return NULL;
 }
+
+/**
+ * @brief Locate a registered device interface by descriptor number.
+ *
+ * @param interface Interface number assigned by usbd_class_add_interface().
+ * @return Registered interface object, or NULL when it does not exist.
+ */
+static usbd_interface_t *usbd_find_interface(uint8_t interface)
+{
+    usb_slist_t *class_node;
+    usb_slist_t *interface_node;
+
+    usb_slist_for_each(class_node, &usbd_class_head)
+    {
+        usbd_class_t *devclass =
+            usb_slist_entry(class_node, struct usbd_class, list);
+        usb_slist_for_each(interface_node, &devclass->intf_list)
+        {
+            usbd_interface_t *intf =
+                usb_slist_entry(interface_node, struct usbd_interface, list);
+            if(intf->intf_num == interface)
+            {
+                return intf;
+            }
+        }
+    }
+    return NULL;
+}
 /**
  * @brief Check if the interface of given number is valid
  *
@@ -184,7 +210,10 @@ static bool is_interface_valid(uint8_t interface)
 static bool is_ep_valid(uint8_t ep)
 {
     const uint8_t *p = usbd_core_cfg.descriptors;
+    usbd_interface_t *intf;
     bool in_active_config = false;
+    uint8_t current_interface = 0xffU;
+    uint8_t current_alt_setting = 0xffU;
 
     if((ep & 0x70U) != 0U)
     {
@@ -206,17 +235,32 @@ static bool is_ep_valid(uint8_t ep)
             in_active_config =
                 (p[CONF_DESC_bConfigurationValue] ==
                  usbd_core_cfg.configuration);
+            current_interface = 0xffU;
+            current_alt_setting = 0xffU;
         }
         else if(p[DESC_bDescriptorType] == USB_DESCRIPTOR_TYPE_OTHER_SPEED)
         {
             in_active_config = false;
+            current_interface = 0xffU;
+            current_alt_setting = 0xffU;
+        }
+        else if(in_active_config &&
+                (p[DESC_bDescriptorType] == USB_DESCRIPTOR_TYPE_INTERFACE))
+        {
+            current_interface = p[INTF_DESC_bInterfaceNumber];
+            current_alt_setting = p[INTF_DESC_bAlternateSetting];
         }
         else if(in_active_config &&
                 (p[DESC_bDescriptorType] == USB_DESCRIPTOR_TYPE_ENDPOINT) &&
                 (((const struct usb_endpoint_descriptor *)p)->bEndpointAddress ==
                  ep))
         {
-            return true;
+            intf = usbd_find_interface(current_interface);
+            if((intf != NULL) &&
+               (intf->alt_setting == current_alt_setting))
+            {
+                return true;
+            }
         }
         p += p[DESC_bLength];
     }
@@ -477,17 +521,22 @@ static bool usbd_set_configuration(uint8_t config_index, uint8_t alt_setting)
 }
 
 /**
- * @brief Close every endpoint in one configured alternate setting.
+ * @brief Apply one interface alternate setting's endpoint operation.
  *
- * @param config_index Configuration value being removed.
- * @param alt_setting Alternate setting whose endpoints are active.
- * @return true when the configuration exists and every close succeeds.
+ * @param config_index Active configuration value.
+ * @param interface Interface number to update.
+ * @param alt_setting Alternate setting whose endpoints are selected.
+ * @param open_endpoints true to open endpoints, false to close them.
+ * @return true when the interface setting exists and every operation succeeds.
  */
-static bool usbd_clear_configuration(uint8_t config_index,
-                                     uint8_t alt_setting)
+static bool usbd_apply_interface_endpoints(uint8_t config_index,
+                                           uint8_t interface,
+                                           uint8_t alt_setting,
+                                           bool open_endpoints)
 {
     const uint8_t *p = usbd_core_cfg.descriptors;
     uint8_t cur_alt_setting = 0xffU;
+    uint8_t cur_interface = 0xffU;
     bool in_active_config = false;
     bool found = false;
     bool success = true;
@@ -500,6 +549,79 @@ static bool usbd_clear_configuration(uint8_t config_index,
                 in_active_config =
                     (p[CONF_DESC_bConfigurationValue] == config_index);
                 cur_alt_setting = 0xffU;
+                cur_interface = 0xffU;
+                break;
+
+            case USB_DESCRIPTOR_TYPE_OTHER_SPEED:
+                in_active_config = false;
+                cur_alt_setting = 0xffU;
+                cur_interface = 0xffU;
+                break;
+
+            case USB_DESCRIPTOR_TYPE_INTERFACE:
+                if(in_active_config)
+                {
+                    cur_alt_setting = p[INTF_DESC_bAlternateSetting];
+                    cur_interface = p[INTF_DESC_bInterfaceNumber];
+                    if((cur_interface == interface) &&
+                       (cur_alt_setting == alt_setting))
+                    {
+                        found = true;
+                    }
+                }
+                break;
+
+            case USB_DESCRIPTOR_TYPE_ENDPOINT:
+                if(in_active_config && (cur_interface == interface) &&
+                   (cur_alt_setting == alt_setting))
+                {
+                    const struct usb_endpoint_descriptor *ep_desc =
+                        (const struct usb_endpoint_descriptor *)p;
+                    bool operation_ok = open_endpoints ?
+                        usbd_set_endpoint(ep_desc) :
+                        usbd_reset_endpoint(ep_desc);
+                    if(!operation_ok)
+                    {
+                        success = false;
+                    }
+                }
+                break;
+
+            default:
+                break;
+        }
+        p += p[DESC_bLength];
+    }
+    return found && success;
+}
+
+/**
+ * @brief Close every endpoint active in one configuration.
+ *
+ * @param config_index Configuration value being removed.
+ * @return true when all registered active settings close successfully.
+ */
+static bool usbd_clear_configuration(uint8_t config_index)
+{
+    const uint8_t *p = usbd_core_cfg.descriptors;
+    usb_slist_t *class_node;
+    usb_slist_t *interface_node;
+    usbd_interface_t *intf;
+    uint8_t cur_interface = 0xffU;
+    uint8_t cur_alt_setting = 0xffU;
+    bool in_active_config = false;
+    bool found = false;
+    bool success = true;
+
+    while((p != NULL) && (p[DESC_bLength] != 0U))
+    {
+        switch(p[DESC_bDescriptorType])
+        {
+            case USB_DESCRIPTOR_TYPE_CONFIGURATION:
+                in_active_config =
+                    (p[CONF_DESC_bConfigurationValue] == config_index);
+                cur_interface = 0xffU;
+                cur_alt_setting = 0xffU;
                 if(in_active_config)
                 {
                     found = true;
@@ -508,22 +630,32 @@ static bool usbd_clear_configuration(uint8_t config_index,
 
             case USB_DESCRIPTOR_TYPE_OTHER_SPEED:
                 in_active_config = false;
+                cur_interface = 0xffU;
                 cur_alt_setting = 0xffU;
                 break;
 
             case USB_DESCRIPTOR_TYPE_INTERFACE:
                 if(in_active_config)
                 {
+                    cur_interface = p[INTF_DESC_bInterfaceNumber];
                     cur_alt_setting = p[INTF_DESC_bAlternateSetting];
                 }
                 break;
 
             case USB_DESCRIPTOR_TYPE_ENDPOINT:
-                if(in_active_config && (cur_alt_setting == alt_setting) &&
-                   !usbd_reset_endpoint(
-                       (const struct usb_endpoint_descriptor *)p))
+                if(in_active_config)
                 {
-                    success = false;
+                    intf = usbd_find_interface(cur_interface);
+                    if(((intf != NULL) &&
+                        (intf->alt_setting == cur_alt_setting)) ||
+                       ((intf == NULL) && (cur_alt_setting == 0U)))
+                    {
+                        if(!usbd_reset_endpoint(
+                               (const struct usb_endpoint_descriptor *)p))
+                        {
+                            success = false;
+                        }
+                    }
                 }
                 break;
 
@@ -531,6 +663,18 @@ static bool usbd_clear_configuration(uint8_t config_index,
                 break;
         }
         p += p[DESC_bLength];
+    }
+
+    usb_slist_for_each(class_node, &usbd_class_head)
+    {
+        usbd_class_t *devclass =
+            usb_slist_entry(class_node, struct usbd_class, list);
+        usb_slist_for_each(interface_node, &devclass->intf_list)
+        {
+            usbd_interface_t *intf =
+                usb_slist_entry(interface_node, struct usbd_interface, list);
+            intf->alt_setting = 0U;
+        }
     }
     return found && success;
 }
@@ -564,57 +708,36 @@ static bool usbd_set_interface(uint8_t iface, uint8_t alt_setting)
 {
     const uint8_t *p = usbd_core_cfg.descriptors;
     const uint8_t *if_desc = NULL;
-    struct usb_endpoint_descriptor *ep_desc;
-    uint8_t cur_alt_setting = 0xFF;
-    uint8_t cur_iface = 0xFF;
+    usbd_interface_t *intf = usbd_find_interface(iface);
+    uint8_t previous_alt_setting;
     bool in_active_config = false;
-    bool ret = false;
 
     USB_LOG_DBG("iface %u alt_setting %u\r\n", iface, alt_setting);
+
+    if(intf == NULL)
+    {
+        return false;
+    }
 
     while (p[DESC_bLength] != 0U) {
         switch (p[DESC_bDescriptorType]) {
             case USB_DESCRIPTOR_TYPE_CONFIGURATION:
-                in_active_config = true;
-                cur_alt_setting = 0xFF;
-                cur_iface = 0xFF;
+                in_active_config =
+                    (p[CONF_DESC_bConfigurationValue] ==
+                     usbd_core_cfg.configuration);
                 break;
 
             case USB_DESCRIPTOR_TYPE_OTHER_SPEED:
                 in_active_config = false;
-                cur_alt_setting = 0xFF;
-                cur_iface = 0xFF;
                 break;
 
             case USB_DESCRIPTOR_TYPE_INTERFACE:
-                if (!in_active_config) {
-                    break;
-                }
-
-                /* remember current alternate setting */
-                cur_alt_setting = p[INTF_DESC_bAlternateSetting];
-                cur_iface = p[INTF_DESC_bInterfaceNumber];
-
-                if (cur_iface == iface &&
-                    cur_alt_setting == alt_setting) {
+                if(in_active_config &&
+                   (p[INTF_DESC_bInterfaceNumber] == iface) &&
+                   (p[INTF_DESC_bAlternateSetting] == alt_setting))
+                {
                     if_desc = (void *)p;
                 }
-
-                USB_LOG_DBG("Current iface %u alt setting %u",
-                            cur_iface, cur_alt_setting);
-                break;
-
-            case USB_DESCRIPTOR_TYPE_ENDPOINT:
-                if (in_active_config && (cur_iface == iface)) {
-                    ep_desc = (struct usb_endpoint_descriptor *)p;
-
-                    if (cur_alt_setting != alt_setting) {
-                        ret = usbd_reset_endpoint(ep_desc);
-                    } else {
-                        ret = usbd_set_endpoint(ep_desc);
-                    }
-                }
-
                 break;
 
             default:
@@ -625,9 +748,39 @@ static bool usbd_set_interface(uint8_t iface, uint8_t alt_setting)
         p += p[DESC_bLength];
     }
 
-    usbd_event_notify_handler(USBD_EVENT_SET_INTERFACE, (void *)if_desc);
+    if(if_desc == NULL)
+    {
+        return false;
+    }
 
-    return ret;
+    previous_alt_setting = intf->alt_setting;
+    if(previous_alt_setting == alt_setting)
+    {
+        usbd_event_notify_handler(USBD_EVENT_SET_INTERFACE, (void *)if_desc);
+        return true;
+    }
+
+    if(!usbd_apply_interface_endpoints(usbd_core_cfg.configuration, iface,
+                                       previous_alt_setting, false))
+    {
+        (void)usbd_apply_interface_endpoints(usbd_core_cfg.configuration,
+                                             iface, previous_alt_setting,
+                                             true);
+        return false;
+    }
+    if(!usbd_apply_interface_endpoints(usbd_core_cfg.configuration, iface,
+                                       alt_setting, true))
+    {
+        (void)usbd_apply_interface_endpoints(usbd_core_cfg.configuration,
+                                             iface, alt_setting, false);
+        (void)usbd_apply_interface_endpoints(usbd_core_cfg.configuration,
+                                             iface, previous_alt_setting,
+                                             true);
+        return false;
+    }
+    intf->alt_setting = alt_setting;
+    usbd_event_notify_handler(USBD_EVENT_SET_INTERFACE, (void *)if_desc);
+    return true;
 }
 
 /**
@@ -752,7 +905,7 @@ static bool usbd_std_device_req_handler(struct usb_setup_packet *setup, uint8_t 
             close_ok = true;
             if(previous_configuration != 0U)
             {
-                close_ok = usbd_clear_configuration(previous_configuration, 0U);
+                close_ok = usbd_clear_configuration(previous_configuration);
                 usbd_core_cfg.configuration = 0U;
                 usbd_core_cfg.configured = false;
                 usbd_core_cfg.remote_wakeup = 0U;
@@ -770,7 +923,7 @@ static bool usbd_std_device_req_handler(struct usb_setup_packet *setup, uint8_t 
 
             if (!usbd_set_configuration((uint8_t)value, 0U)) {
                 USB_LOG_DBG("USB Set Configuration failed\r\n");
-                (void)usbd_clear_configuration((uint8_t)value, 0U);
+                (void)usbd_clear_configuration((uint8_t)value);
                 ret = false;
             } else {
                 /* configuration successful,
@@ -778,7 +931,6 @@ static bool usbd_std_device_req_handler(struct usb_setup_packet *setup, uint8_t 
                  */
                 usbd_core_cfg.configuration = (uint8_t)value;
                 usbd_core_cfg.configured = true;
-                usbd_core_cfg.suspended = false;
                 usbd_event_notify_handler(USBD_EVENT_CONFIGURED, NULL);
             }
 
@@ -833,15 +985,17 @@ static bool usbd_std_interface_req_handler(struct usb_setup_packet *setup,
             return false;
 
         case USB_REQUEST_GET_INTERFACE:
-            /** This handler is called for classes that does not support
-             * alternate Interfaces so always return 0. Classes that
-             * support alternative interfaces handles GET_INTERFACE
-             * in custom_handler.
-             */
-            (*data)[0] = 0;
-
+        {
+            usbd_interface_t *intf =
+                usbd_find_interface((uint8_t)setup->wIndex);
+            if(intf == NULL)
+            {
+                return false;
+            }
+            (*data)[0] = intf->alt_setting;
             *len = 1;
             break;
+        }
 
         case USB_REQUEST_SET_INTERFACE:
             USB_LOG_DBG("REQ_SET_INTERFACE\r\n");
@@ -1337,10 +1491,6 @@ static void usbd_ep0_out_handler(void)
             return;
         }
 
-        if ((setup->bmRequestType & USB_REQUEST_DIR_MASK) ==
-            USB_REQUEST_DIR_IN) {
-            usbd_ep0_request_complete(setup);
-        }
         return;
     }
 
@@ -1467,7 +1617,6 @@ void usbd_event_notify_handler(uint8_t event, void *arg)
             usbd_core_cfg.configured = 0;
             usbd_core_cfg.configuration = 0;
             usbd_core_cfg.remote_wakeup = 0U;
-            usbd_core_cfg.suspended = false;
             struct usbd_endpoint_cfg ep0_cfg;
             ep0_cfg.ep_mps = USB_CTRL_EP_MPS;
             ep0_cfg.ep_type = USB_ENDPOINT_TYPE_CONTROL;
@@ -1481,6 +1630,8 @@ void usbd_event_notify_handler(uint8_t event, void *arg)
 #if USBD_EP_CALLBACK_SEARCH_METHOD == USBD_EP_CALLBACK_ARR_SEARCH
             usbd_ep_callback_register();
 #endif
+            /* Fall through so classes also receive the reset event. */
+            __attribute__((fallthrough));
 
         case USBD_EVENT_ERROR:
         case USBD_EVENT_SOF:
@@ -1497,12 +1648,10 @@ void usbd_event_notify_handler(uint8_t event, void *arg)
             break;
 
         case USBD_EVENT_SUSPEND:
-            usbd_core_cfg.suspended = true;
             usbd_class_event_notify_handler(event, arg);
             break;
 
         case USBD_EVENT_RESUME:
-            usbd_core_cfg.suspended = false;
             usbd_class_event_notify_handler(event, arg);
             break;
 
@@ -1563,6 +1712,7 @@ void usbd_class_add_interface(usbd_class_t *devclass, usbd_interface_t *intf)
 {
     static uint8_t intf_offset = 0;
     intf->intf_num = intf_offset;
+    intf->alt_setting = 0U;
     usb_slist_add_tail(&devclass->intf_list, &intf->list);
     usb_slist_init(&intf->ep_list);
     intf_offset++;
@@ -1576,16 +1726,6 @@ void usbd_interface_add_endpoint(usbd_interface_t *intf, usbd_endpoint_t *ep)
 bool usb_device_is_configured(void)
 {
     return usbd_core_cfg.configured;
-}
-
-/**
- * @brief Return whether the USB bus is currently suspended.
- *
- * @return true after a suspend event and before resume/reset.
- */
-bool usb_device_is_suspended(void)
-{
-    return usbd_core_cfg.suspended;
 }
 
 int usbd_initialize(void)
@@ -1603,23 +1743,17 @@ int usbd_deinitialize(void)
 
     if(previous_configuration != 0U)
     {
-        (void)usbd_clear_configuration(previous_configuration, 0U);
+        (void)usbd_clear_configuration(previous_configuration);
     }
     usbd_core_cfg.configured = false;
     usbd_core_cfg.configuration = 0U;
     usbd_core_cfg.remote_wakeup = 0U;
-    usbd_core_cfg.suspended = false;
     if(previous_configuration != 0U)
     {
         usbd_event_notify_handler(USBD_EVENT_UNCONFIGURED, NULL);
     }
     usbd_set_address(0U);
     return usb_dc_deinit();
-}
-
-__WEAK void usbd_ep0_request_complete(const struct usb_setup_packet *setup)
-{
-    (void)setup;
 }
 
 #ifdef CONFIG_USBDEV_TEST_MODE

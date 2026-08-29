@@ -1,17 +1,5 @@
 #ifndef _USB_CONFIG_H
 #define _USB_CONFIG_H
-/*
- * Temporary enumeration diagnostic: keep using the CH32 USBHS device controller
- * and PB6/PB7 HS port, but force CherryUSB to configure full-speed signaling.
- * Remove this override after the USBHS full-speed attach test.
- */
-#define PROSHOCK_USBHS_FORCE_FULL_SPEED 0
-
-#if PROSHOCK_USBHS_FORCE_FULL_SPEED
-#ifdef CONFIG_USB_HS
-#undef CONFIG_USB_HS
-#endif
-#endif
 
 /* USB common Configuration */
 #ifndef CONFIG_USB_DBG_LEVEL

@@ -123,6 +123,8 @@ typedef struct usbd_interface {
     /** Handler for USB event notify commands */
     usbd_notify_handler notify_handler;
     uint8_t intf_num;
+    /** Currently selected alternate setting for this interface. */
+    uint8_t alt_setting;
     usb_slist_t ep_list;
 } usbd_interface_t;
 
@@ -134,13 +136,6 @@ typedef struct usbd_class {
 
 void usbd_event_notify_handler(uint8_t event, void *arg);
 
-/**
- * @brief Notify the application after an IN control request status stage.
- *
- * @param setup Completed setup packet.
- */
-void usbd_ep0_request_complete(const struct usb_setup_packet *setup);
-
 void usbd_desc_register(const uint8_t *desc);
 void usbd_msosv1_desc_register(struct usb_msosv1_descriptor *desc);
 void usbd_msosv2_desc_register(struct usb_msosv2_descriptor *desc);
@@ -149,9 +144,6 @@ void usbd_class_register(usbd_class_t *devclass);
 void usbd_class_add_interface(usbd_class_t *devclass, usbd_interface_t *intf);
 void usbd_interface_add_endpoint(usbd_interface_t *intf, usbd_endpoint_t *ep);
 bool usb_device_is_configured(void);
-
-/** @brief Return whether the device has received a bus suspend event. */
-bool usb_device_is_suspended(void);
 int usbd_initialize(void);
 
 /**

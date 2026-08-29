@@ -32,23 +32,15 @@ extern "C" {
 void usbd_hid_descriptor_register(uint8_t intf_num, const uint8_t *desc);
 void usbd_hid_report_descriptor_register(uint8_t intf_num, const uint8_t *desc, uint32_t desc_len);
 void usbd_hid_add_interface(usbd_class_t *devclass, usbd_interface_t *intf);
-int usbh_hid_get_report(uint8_t intf, uint8_t report_id, uint8_t report_type,
+int usbd_hid_get_report(uint8_t intf, uint8_t report_id, uint8_t report_type,
                         const uint8_t **report, uint32_t *report_len);
-uint8_t usbh_hid_get_idle(uint8_t intf, uint8_t report_id);
-uint8_t usbh_hid_get_protocol(uint8_t intf);
-int usbh_hid_set_report(uint8_t intf, uint8_t report_id,
+uint8_t usbd_hid_get_idle(uint8_t intf, uint8_t report_id);
+uint8_t usbd_hid_get_protocol(uint8_t intf);
+int usbd_hid_set_report(uint8_t intf, uint8_t report_id,
                         uint8_t report_type, uint8_t *report,
-                        uint8_t report_len);
-void usbh_hid_set_idle(uint8_t intf, uint8_t report_id, uint8_t duration);
-void usbh_hid_set_protocol(uint8_t intf, uint8_t protocol);
-
-/**
- * @brief Notify the HID application about a USB lifecycle event.
- *
- * @param event CherryUSB event identifier.
- * @param arg Optional event argument.
- */
-void usbh_hid_event_notify(uint8_t event, void *arg);
+                        uint32_t report_len);
+void usbd_hid_set_idle(uint8_t intf, uint8_t report_id, uint8_t duration);
+void usbd_hid_set_protocol(uint8_t intf, uint8_t protocol);
 
 #ifdef __cplusplus
 }

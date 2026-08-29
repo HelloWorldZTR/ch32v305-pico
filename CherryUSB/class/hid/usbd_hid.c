@@ -142,7 +142,7 @@ static int hid_class_request_handler(struct usb_setup_packet *setup, uint8_t **d
             const uint8_t *report = NULL;
             uint32_t report_len = 0U;
 
-            if (usbh_hid_get_report(intf, LO_BYTE(setup->wValue),
+            if (usbd_hid_get_report(intf, LO_BYTE(setup->wValue),
                                     HI_BYTE(setup->wValue), &report,
                                     &report_len) < 0) {
                 return -1;
@@ -160,28 +160,28 @@ static int hid_class_request_handler(struct usb_setup_packet *setup, uint8_t **d
             break;
         }
         case HID_REQUEST_GET_IDLE:
-            current_hid_class->idle_state = usbh_hid_get_idle(intf, LO_BYTE(setup->wValue));
+            current_hid_class->idle_state = usbd_hid_get_idle(intf, LO_BYTE(setup->wValue));
             *data = (uint8_t *)&current_hid_class->idle_state;
             *len = 1;
             break;
         case HID_REQUEST_GET_PROTOCOL:
-            current_hid_class->protocol = usbh_hid_get_protocol(intf);
+            current_hid_class->protocol = usbd_hid_get_protocol(intf);
             *data = (uint8_t *)&current_hid_class->protocol;
             *len = 1;
             break;
         case HID_REQUEST_SET_REPORT:
-            if (usbh_hid_set_report(intf, LO_BYTE(setup->wValue),
+            if (usbd_hid_set_report(intf, LO_BYTE(setup->wValue),
                                     HI_BYTE(setup->wValue), *data,
                                     *len) < 0) {
                 return -1;
             }
             break;
         case HID_REQUEST_SET_IDLE:
-            usbh_hid_set_idle(intf, LO_BYTE(setup->wValue), HI_BYTE(setup->wValue)); /*report id ,duration*/
+            usbd_hid_set_idle(intf, LO_BYTE(setup->wValue), HI_BYTE(setup->wValue)); /*report id ,duration*/
             current_hid_class->idle_state = HI_BYTE(setup->wValue);
             break;
         case HID_REQUEST_SET_PROTOCOL:
-            usbh_hid_set_protocol(intf, LO_BYTE(setup->wValue)); /*protocol*/
+            usbd_hid_set_protocol(intf, LO_BYTE(setup->wValue)); /*protocol*/
             current_hid_class->protocol = LO_BYTE(setup->wValue);
             break;
 
@@ -195,6 +195,7 @@ static int hid_class_request_handler(struct usb_setup_packet *setup, uint8_t **d
 
 static void hid_notify_handler(uint8_t event, void *arg)
 {
+    (void)arg;
     switch (event) {
         case USBD_EVENT_RESET:
         case USBD_EVENT_UNCONFIGURED:
@@ -204,7 +205,6 @@ static void hid_notify_handler(uint8_t event, void *arg)
         default:
             break;
     }
-    usbh_hid_event_notify(event, arg);
 }
 
 int usbd_hid_alloc(uint8_t intf)
@@ -268,7 +268,7 @@ void usbd_hid_report_descriptor_register(uint8_t intf_num, const uint8_t *desc, 
     }
 }
 
-__WEAK int usbh_hid_get_report(uint8_t intf, uint8_t report_id,
+__WEAK int usbd_hid_get_report(uint8_t intf, uint8_t report_id,
                                uint8_t report_type, const uint8_t **report,
                                uint32_t *report_len)
 {
@@ -284,47 +284,40 @@ __WEAK int usbh_hid_get_report(uint8_t intf, uint8_t report_id,
     return -1;
 }
 
-__WEAK uint8_t usbh_hid_get_idle(uint8_t intf, uint8_t report_id)
+__WEAK uint8_t usbd_hid_get_idle(uint8_t intf, uint8_t report_id)
 {
     (void)intf;
     (void)report_id;
     return 0;
 }
 
-__WEAK uint8_t usbh_hid_get_protocol(uint8_t intf)
+__WEAK uint8_t usbd_hid_get_protocol(uint8_t intf)
 {
     (void)intf;
     return 0;
 }
 
-__WEAK int usbh_hid_set_report(uint8_t intf, uint8_t report_id,
+__WEAK int usbd_hid_set_report(uint8_t intf, uint8_t report_id,
                                uint8_t report_type, uint8_t *report,
-                               uint8_t report_len)
+                               uint32_t report_len)
 {
     (void)intf;
     (void)report_id;
     (void)report_type;
     (void)report;
     (void)report_len;
-    return -1;
+    return 0;
 }
 
-__WEAK void usbh_hid_set_idle(uint8_t intf, uint8_t report_id, uint8_t duration)
+__WEAK void usbd_hid_set_idle(uint8_t intf, uint8_t report_id, uint8_t duration)
 {
     (void)intf;
     (void)report_id;
     (void)duration;
 }
 
-__WEAK void usbh_hid_set_protocol(uint8_t intf, uint8_t protocol)
+__WEAK void usbd_hid_set_protocol(uint8_t intf, uint8_t protocol)
 {
     (void)intf;
     (void)protocol;
-}
-
-/** @brief Default no-op HID application lifecycle hook. */
-__WEAK void usbh_hid_event_notify(uint8_t event, void *arg)
-{
-    (void)event;
-    (void)arg;
 }
