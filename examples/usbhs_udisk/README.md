@@ -34,8 +34,10 @@ MSC 写入是同步完成的，并接受主机安全弹出时常用的 `SYNCHRON
 - USBHS DP：PB7（封装 59 脚）
 - 必须接到 USBHS PHY 对应的 D+/D-，不能使用 USBFS 引脚代替。
 - 使用可传数据的高速 USB 线，并保持差分线短、等长、无支路。
-- USBHS PHY PLL 使用芯片内部 8 MHz HSI，经二分频得到 4 MHz 参考时钟；系统时钟也
-  固定使用 48 MHz HSI，不依赖外部 HSE 是否安装或起振。
+- 默认使用板载 8 MHz HSE：系统时钟为 HSE × 9 = 72 MHz，USBHS PHY PLL 参考时钟为
+  HSE ÷ 2 = 4 MHz。配置参考时钟后等待约 10 ms，再启用 PHY PLL。
+- 也可构建 48 MHz HSI 诊断版；其 USBHS PHY PLL 使用内部 8 MHz HSI ÷ 2 的 4 MHz
+  参考时钟，完全不依赖外部晶振。
 
 ## 编译
 
@@ -54,6 +56,18 @@ examples/usbhs_udisk/build/usbhs_udisk.elf
 examples/usbhs_udisk/build/usbhs_udisk.bin
 examples/usbhs_udisk/build/usbhs_udisk.map
 ```
+
+默认产物使用 HSE。若要构建不依赖外部晶振的 HSI 诊断固件：
+
+```sh
+make -C examples/usbhs_udisk CLOCK_SOURCE=hsi \
+  WCH_EVT_ROOT=/path/to/ch32v307/EVT
+```
+
+HSI 诊断版输出为 `usbhs_udisk_hsi.elf/.bin/.map`。如果 HSI 版能够稳定以 480 Mbps
+枚举、而默认 HSE 版不能，应优先检查板载 8 MHz 晶振、OSC_IN/OSC_OUT 焊点、负载电容
+以及周边走线。HSI 版成功只能说明 USBHS 控制器、PHY 和数据线基本正常，不能证明外部
+晶振已经起振。
 
 BIN 将 8 KiB FAT12 镜像放在末尾，因此文件大小固定为完整的 128 KiB。PA8 持续
 闪烁表示主循环正常，Flash 擦写校验失败时 PA8 会转为常亮。
@@ -78,4 +92,5 @@ make -C examples/usbhs_udisk \
 注意：格式化、操作系统索引文件和日志都会产生较多擦写。测试完成后应安全弹出；Flash
 写入期间掉电可能损坏这个微型文件系统。
 
-本例已于 2026-08-29 在 CH32V305RBT6 实机上完成 480 Mbps 枚举和文件写入验证。
+本例已于 2026-08-29 在 CH32V305RBT6 实机上验证：默认 HSE 版可成功以 480 Mbps
+枚举；HSI 版可完成 480 Mbps 枚举和文件写入。

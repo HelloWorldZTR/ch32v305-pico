@@ -22,7 +22,17 @@ OBJCOPY := $(CROSS_COMPILE)objcopy
 SIZE    := $(CROSS_COMPILE)size
 
 BUILD_DIR := $(EXAMPLE_DIR)/build
+CLOCK_SOURCE ?= hse
+
+ifeq ($(CLOCK_SOURCE),hse)
 TARGET := $(BUILD_DIR)/usbhs_udisk
+CLOCK_CFLAGS := -DCH32V30X_USE_72MHZ_HSE
+else ifeq ($(CLOCK_SOURCE),hsi)
+TARGET := $(BUILD_DIR)/usbhs_udisk_hsi
+CLOCK_CFLAGS :=
+else
+$(error CLOCK_SOURCE must be either hsi or hse)
+endif
 
 INCLUDES := \
 	-I$(EXAMPLE_DIR) \
@@ -47,13 +57,13 @@ SOURCES := \
 	$(WCH_SRC)/Peripheral/src/ch32v30x_gpio.c \
 	$(WCH_SRC)/Peripheral/src/ch32v30x_rcc.c \
 	$(WCH_SRC)/Peripheral/src/ch32v30x_tim.c \
-	$(EXAMPLE_DIR)/system_ch32v30x_hsi.c \
+	$(EXAMPLE_DIR)/system_ch32v30x.c \
 	$(WCH_SRC)/Startup/startup_ch32v30x_D8C.S
 
 ARCH_FLAGS := -march=rv32imacxw -mabi=ilp32 -msave-restore
 CFLAGS := $(ARCH_FLAGS) -std=gnu99 -Os -g3 -ffunction-sections -fdata-sections \
 	-fno-common -fsigned-char -Wall -Wextra -DCH32V30x_D8C \
-	-DCONFIG_USB_HS $(INCLUDES)
+	-DCONFIG_USB_HS $(CLOCK_CFLAGS) $(INCLUDES)
 LDFLAGS := $(ARCH_FLAGS) -nostartfiles --specs=nano.specs --specs=nosys.specs \
 	-Wl,--gc-sections -Wl,-Map,$(TARGET).map -T$(EXAMPLE_DIR)/link.ld
 

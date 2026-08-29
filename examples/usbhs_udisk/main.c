@@ -19,6 +19,7 @@
 #define USB_CONFIG_SIZE  (9 + MSC_DESCRIPTOR_LEN)
 #define HEARTBEAT_TIMER_HZ 1000000U
 #define HEARTBEAT_HALF_PERIOD_US 250000U
+#define USBHS_PHY_SETTLE_US 10000U
 
 static const uint8_t msc_descriptor[] = {
     USB_DEVICE_DESCRIPTOR_INIT(USB_2_0, 0x00, 0x00, 0x00,
@@ -94,17 +95,42 @@ int usbd_msc_sector_write(uint32_t sector, uint8_t *buffer, uint32_t length)
     return flash_disk_write(sector, buffer, length);
 }
 
+#ifdef CH32V30X_USE_72MHZ_HSE
+static void usbhs_phy_settle_delay(void)
+{
+    uint16_t start = TIM_GetCounter(TIM2);
+
+    while ((uint16_t)(TIM_GetCounter(TIM2) - start) < USBHS_PHY_SETTLE_US) {
+    }
+}
+#endif
+
 void usb_dc_low_level_init(void)
 {
+#ifdef CH32V30X_USE_72MHZ_HSE
+    /* The populated 8 MHz crystal is also the USBHS PHY PLL source. */
+    RCC_HSEConfig(RCC_HSE_ON);
+    while (RCC_GetFlagStatus(RCC_FLAG_HSERDY) == RESET) {
+    }
+#else
     /* Keep USBHS independent of the optional external crystal. The 8 MHz HSI
      * is divided to the 4 MHz reference expected by the USBHS PHY PLL. */
     RCC_HSICmd(ENABLE);
     while (RCC_GetFlagStatus(RCC_FLAG_HSIRDY) == RESET) {
     }
+#endif
     RCC_USBCLK48MConfig(RCC_USBCLK48MCLKSource_USBPHY);
+#ifdef CH32V30X_USE_72MHZ_HSE
+    RCC_USBHSPLLCLKConfig(RCC_HSBHSPLLCLKSource_HSE);
+#else
     RCC_USBHSPLLCLKConfig(RCC_HSBHSPLLCLKSource_HSI);
+#endif
     RCC_USBHSConfig(RCC_USBPLL_Div2);
     RCC_USBHSPLLCKREFCLKConfig(RCC_USBHSPLLCKREFCLK_4M);
+#ifdef CH32V30X_USE_72MHZ_HSE
+    /* Match the proven ProShock clock sequence before enabling the PHY PLL. */
+    usbhs_phy_settle_delay();
+#endif
     RCC_USBHSPHYPLLALIVEcmd(ENABLE);
     RCC_AHBPeriphClockCmd(RCC_AHBPeriph_USBHS, ENABLE);
     NVIC_EnableIRQ(USBHS_IRQn);
