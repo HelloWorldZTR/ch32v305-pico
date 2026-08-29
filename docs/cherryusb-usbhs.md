@@ -20,7 +20,8 @@ After the port was imported from ProShock 4, logic tied to a specific gamepad
 main loop and its 8 kHz report scheduling was removed:
 
 - Periodic calls to `usb_dc_usbhs_service()` are no longer required; that API
-  and the EP0 priority watchdog have been removed.
+  and the EP0 priority watchdog have been removed. Non-control IN endpoints are
+  never paused merely because a SETUP packet arrived.
 - The application-level recovery API for missing IN completions and the public
   USBHS IRQ lock/unlock API have been removed.
 - The EP0 request-complete callback used by WebHID/DS4 has been removed.
@@ -139,6 +140,8 @@ Configure the project as follows:
 
 ## Quick checks
 
+- Run `tests/run_cherryusb_tests.sh` after changing the device core, HID/MSC
+  classes, or CH32 USBHS port; the host-side suite treats warnings as errors.
 - The compiler command line contains `-DCONFIG_USB_HS`.
 - Exactly one CH32 device-controller port, `usb_dc_usbhs.c`, is linked into the
   final image.

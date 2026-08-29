@@ -7,6 +7,11 @@ with an 8 kHz polling rate. All passive components are 0603 or larger for easy
 hand soldering. The repository also includes a proven CherryUSB port and
 ready-to-use demos.
 
+The board can be reproduced for approximately ¥15/$2. A four-layer PCB with
+castellated holes costs considerably more. To keep the prototype inexpensive,
+use JLCPCB's free four-layer PCB offer and do not add a special castellated-hole
+requirement to the order.
+
 ## Hardware
 
 <p align="center">
@@ -15,12 +20,13 @@ ready-to-use demos.
   <img src="docs/images/1.jpg" alt="CH32V305 Pico bare PCBs" width="31%">
 </p>
 
-See [the pin layout and alternate-function diagram](docs/pin-mode.md).
+See [the pin layout and alternate-function diagram](docs/pin-mode.md). Sorry for
+the poor soldering job. 😂 Special thanks to JLCPCB for free prototyping.
 
 ## CherryUSB / USBHS
 
 The repository includes a reusable CH32V30x CherryUSB port derived from the
-implementation originally imported by ProShock 4. See
+upstream CH32V307 implementation. See
 [CherryUSB USBHS configuration](docs/cherryusb-usbhs.md) for source attribution,
 local fixes, and MounRiver project setup.
 
@@ -35,5 +41,5 @@ they actually use; see the linked configuration document for details.
 
 - [PA8 breathing LED](examples/blink/README.md): drives the onboard user LED
   with TIM1_CH1 hardware PWM and a perceptual brightness curve.
-- [CH32V305 USBHS internal-Flash MSC disk](examples/usbhs_msc_internal_flash/README.md):
+- [CH32V305 USBHS internal-Flash MSC disk](examples/usbhs_udisk/README.md):
   reserves the final 8 KiB of a CH32V305RBT6 as a persistent FAT12 test disk.
