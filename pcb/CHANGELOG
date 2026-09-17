@@ -1,11 +1,17 @@
 CH32V305 Pico PCB Changelog
 ===========================
 
-Version 2
-2026-09-17
+Version 2                                                2026-09-17
 ------------------------------------------------------------------
 
-Used 2 layer PCB for cheaper mass production. 
+Changed from a four-layer PCB to a two-layer PCB to reduce
+manufacturing costs for volume production.
+
+Release files:
+
+    EDA project: v2/ProPrj_ch32v305_pico.epro
+
+    Gerber and drill files: v2/ch32v305_pico_rev2_2026-09-17.zip
 
 Version 1                                                2026-08-29
 ------------------------------------------------------------------

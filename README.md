@@ -10,12 +10,33 @@ with an 8 kHz polling rate. All passive components are 0603 or larger for easy
 hand soldering. The repository also includes a proven CherryUSB port and
 ready-to-use demos.
 
-The board can be reproduced for approximately ¥15/$2. A four-layer PCB with
-castellated holes costs considerably more. To keep the prototype inexpensive,
-use JLCPCB's free four-layer PCB offer and do not add a special castellated-hole
-requirement to the order.
+The board can be reproduced for approximately ¥15/$2. Rev 2 uses a two-layer
+PCB to reduce manufacturing costs for volume production. The original Rev 1
+used a four-layer PCB; its low-cost prototype relied on JLCPCB's free four-layer
+PCB offer without a special castellated-hole requirement.
 
 ## Hardware
+
+### Rev 2 — 2026-09-17
+
+Rev 2 changes the PCB from four layers to two layers to lower manufacturing
+costs for volume production.
+
+- [EDA project](pcb/v2/ProPrj_ch32v305_pico.epro)
+- [Gerber and drill files](pcb/v2/ch32v305_pico_rev2_2026-09-17.zip)
+- [Hardware changelog](pcb/CHANGELOG)
+
+<p align="center">
+  <img src="docs/images/rev2.jpg" alt="CH32V305 Pico Rev 2 front and back views" width="65%">
+</p>
+
+Used utensil this time. The soldering is much better now.
+
+### Rev 1 — 2026-08-29
+
+The initial four-layer hardware validation revision, with basic power-supply
+operation and USB High Speed connectivity and communication validated.
+Design and manufacturing files are available in [pcb/v1](pcb/v1).
 
 <p align="center">
   <img src="docs/images/3.jpg" alt="Assembled CH32V305 Pico board" width="31%">
