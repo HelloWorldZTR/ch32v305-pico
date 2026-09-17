@@ -45,4 +45,11 @@ common_includes="-I$project_root/CherryUSB -I$project_root/CherryUSB/common -I$p
     -o "$test_output/usb_dc_usbhs_ep0_state_test"
 "$test_output/usb_dc_usbhs_ep0_state_test"
 
-echo "CherryUSB portable tests passed"
+"$host_compiler" $common_flags \
+    -I"$project_root/examples/usbhs_logic_analyzer" \
+    "$project_root/tests/sump_protocol_test.c" \
+    "$project_root/examples/usbhs_logic_analyzer/sump_protocol.c" \
+    -o "$test_output/sump_protocol_test"
+"$test_output/sump_protocol_test"
+
+echo "CherryUSB and SUMP portable tests passed"

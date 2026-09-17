@@ -120,9 +120,9 @@ projects also need the CherryUSB sources and project settings described in
 - [USBHS eight-channel logic analyzer](examples/usbhs_logic_analyzer/README.md):
   samples PA0–PA7 through timer-triggered DMA and speaks the SUMP/OLS protocol
   used by PulseView and sigrok.
-- [CH32V307 EVT logic-pattern generator](examples/ch32v307_logic_generator/README.md):
-  generates counter, walking-bit, alternating, LFSR, and pulse patterns for
-  analyzer validation.
-- [Arduino Nano protocol generator](examples/arduino_nano_protocol_generator/README.md):
-  produces low-speed UART, SPI, I2C, PWM, and irregular-pulse test signals;
-  external 5 V-to-3.3 V level conversion is mandatory.
+- [CH32V305 Pico logic-pattern generator](examples/ch32v305_logic_generator/README.md):
+  outputs counter, walking-one, alternating, LFSR, and pulse patterns on PA0–PA7.
+- [CH32V305 Pico protocol generator](examples/ch32v305_protocol_generator/README.md):
+  produces 3.3 V UART, SPI, synthetic I2C, PWM, and variable-width pulse signals.
+  See the [two-board demo guide](docs/two-board-demo.md) for shared wiring and
+  PulseView settings; use a second Pico as the analyzer.

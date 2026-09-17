@@ -2,3 +2,8 @@
 tmp/
 examples/usbhs_udisk/build/
 examples/blink/build/
+examples/usbhs_logic_analyzer/build/
+
+hardware/
+examples/ch32v305_logic_generator/build/
+examples/ch32v305_protocol_generator/build/
